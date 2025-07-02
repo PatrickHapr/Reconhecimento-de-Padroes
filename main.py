@@ -24,6 +24,7 @@ class FeijaoMLPClassifier:
             'labels': [],
             'imagens': []  # Para rastrear de qual imagem veio cada feijão
         }
+        self.stats_finais = {}  # Para armazenar estatísticas finais
 
     def listar_imagens(self, pasta):
         """Lista todas as imagens na pasta"""
@@ -59,7 +60,7 @@ class FeijaoMLPClassifier:
         feijoes_contours = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if 100 < area < 10000:
+            if 200 < area < 10000:
                 feijoes_contours.append(contour)
         
         print(f"Feijões detectados: {len(feijoes_contours)}")
@@ -143,6 +144,8 @@ class FeijaoMLPClassifier:
             print("Nenhuma imagem encontrada!")
             return False
         
+        self.stats_finais['total_imagens'] = len(imagens)
+        
         for img_path in imagens:
             caracteristicas, labels = self.processar_imagem(img_path)
             if caracteristicas:
@@ -184,10 +187,25 @@ class FeijaoMLPClassifier:
         print("\n=== RESULTADOS ===")
         print(f"Acurácia: {accuracy:.3f}")
         print("\nRelatório de Classificação:")
-        print(classification_report(y_test, y_pred, target_names=['RUIM', 'BOM']))
+        report = classification_report(y_test, y_pred, target_names=['RUIM', 'BOM'])
+        print(report)
         
         print("\nMatriz de Confusão:")
-        print(confusion_matrix(y_test, y_pred))
+        cm = confusion_matrix(y_test, y_pred)
+        print(cm)
+        
+        # Armazenar estatísticas para o relatório final
+        self.stats_finais.update({
+            'total_feijoes': len(y),
+            'feijoes_bom': sum(y),
+            'feijoes_ruim': len(y) - sum(y),
+            'formato_dados': X.shape,
+            'acuracia': accuracy,
+            'matriz_confusao': cm,
+            'treino_size': len(X_train),
+            'teste_size': len(X_test),
+            'classification_report': report
+        })
         
         return accuracy, X_test, y_test, y_pred
 
@@ -215,6 +233,9 @@ class FeijaoMLPClassifier:
         print(f"Total de amostras: {len(df)}")
         print("\nPrimeiras 5 linhas:")
         print(df.head())
+        
+        self.stats_finais['dataset_filename'] = filename
+        self.stats_finais['dataset_shape'] = df.shape
         
         return df
 
@@ -269,6 +290,74 @@ class FeijaoMLPClassifier:
         
         return img_resultado
 
+    def exibir_relatorio_final(self):
+        """Exibe um relatório final completo com todas as estatísticas"""
+        print("\n" + "="*60)
+        print("                 RELATÓRIO FINAL COMPLETO")
+        print("="*60)
+        
+        print(f"\n📊 ESTATÍSTICAS GERAIS:")
+        print(f"   • Total de imagens processadas: {self.stats_finais.get('total_imagens', 0)}")
+        print(f"   • Total de feijões detectados: {self.stats_finais.get('total_feijoes', 0)}")
+        print(f"   • Feijões classificados como BOM: {self.stats_finais.get('feijoes_bom', 0)}")
+        print(f"   • Feijões classificados como RUIM: {self.stats_finais.get('feijoes_ruim', 0)}")
+        
+        if self.stats_finais.get('total_feijoes', 0) > 0:
+            prop_bom = self.stats_finais['feijoes_bom'] / self.stats_finais['total_feijoes']
+            prop_ruim = self.stats_finais['feijoes_ruim'] / self.stats_finais['total_feijoes']
+            print(f"   • Proporção BOM/RUIM: {prop_bom:.2f}/{prop_ruim:.2f}")
+        
+        print(f"\n🧠 INFORMAÇÕES DA REDE NEURAL:")
+        print(f"   • Formato dos dados: {self.stats_finais.get('formato_dados', 'N/A')}")
+        print(f"   • Tamanho do conjunto de treino: {self.stats_finais.get('treino_size', 0)}")
+        print(f"   • Tamanho do conjunto de teste: {self.stats_finais.get('teste_size', 0)}")
+        print(f"   • Arquitetura: MLP com camadas ocultas (100, 50)")
+        print(f"   • Função de ativação: ReLU")
+        print(f"   • Otimizador: Adam")
+        
+        print(f"\n🎯 DESEMPENHO DO MODELO:")
+        print(f"   • Acurácia alcançada: {self.stats_finais.get('acuracia', 0):.3f}")
+        
+        if 'matriz_confusao' in self.stats_finais:
+            cm = self.stats_finais['matriz_confusao']
+            print(f"\n📈 MATRIZ DE CONFUSÃO:")
+            print(f"                 Predito")
+            print(f"              RUIM    BOM")
+            print(f"   Real RUIM  {cm[0][0]:4d}   {cm[0][1]:4d}")
+            print(f"        BOM   {cm[1][0]:4d}   {cm[1][1]:4d}")
+            
+            # Calcular métricas detalhadas
+            tn, fp, fn, tp = cm[0][0], cm[0][1], cm[1][0], cm[1][1]
+            precision_ruim = tn / (tn + fn) if (tn + fn) > 0 else 0
+            precision_bom = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall_ruim = tn / (tn + fp) if (tn + fp) > 0 else 0
+            recall_bom = tp / (tp + fn) if (tp + fn) > 0 else 0
+            
+            print(f"\n📊 MÉTRICAS DETALHADAS:")
+            print(f"   • Precisão RUIM: {precision_ruim:.3f}")
+            print(f"   • Precisão BOM:  {precision_bom:.3f}")
+            print(f"   • Recall RUIM:   {recall_ruim:.3f}")
+            print(f"   • Recall BOM:    {recall_bom:.3f}")
+        
+        print(f"\n💾 ARQUIVOS GERADOS:")
+        if 'dataset_filename' in self.stats_finais:
+            print(f"   • Dataset: {self.stats_finais['dataset_filename']}")
+            print(f"   • Dimensões do dataset: {self.stats_finais['dataset_shape']}")
+        print(f"   • Imagens de resultado salvas com prefixo 'resultado_'")
+        
+        print(f"\n🔧 CARACTERÍSTICAS EXTRAÍDAS (9 features):")
+        features = [
+            "1. Cor média", "2. Desvio padrão da cor", "3. Cor mínima", 
+            "4. Cor máxima", "5. Área", "6. Perímetro", 
+            "7. Proporção (largura/altura)", "8. Preenchimento", "9. Circularidade"
+        ]
+        for feature in features:
+            print(f"   • {feature}")
+        
+        print("\n" + "="*60)
+        print("           PROCESSAMENTO FINALIZADO COM SUCESSO!")
+        print("="*60)
+
 # === USO DO SISTEMA ===
 if __name__ == "__main__":
     classificador = FeijaoMLPClassifier()
@@ -294,7 +383,8 @@ if __name__ == "__main__":
         for img_path in imagens:
             classificador.visualizar_resultados(img_path)
         
-        print("\n=== PROCESSO COMPLETO! ===")
+        # 5. NOVO: Exibir relatório final completo
+        classificador.exibir_relatorio_final()
         
     except Exception as e:
         print(f"ERRO: {e}")
